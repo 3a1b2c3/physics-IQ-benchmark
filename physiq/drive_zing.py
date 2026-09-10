@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 import subprocess
 import sys
@@ -109,20 +110,30 @@ def build_sessions(rows: list[dict], frames: dict[str, Path], n_frames: int,
     return sessions
 
 
-def resolve_pretrained_dir(pretrained_dir: Path) -> Path:
-    """Accept either a plain Zing-0.5 layout or a huggingface_hub cache.
+def resolve_zing_assets(base: Path) -> tuple[Path, Path]:
+    """Locate (pretrained_dir, checkpoint) for a Zing-0.5 install.
 
-    download_models.sh uses snapshot_download(cache_dir=./pretrained_models),
-    which produces models--seedleap--zing-0.5/snapshots/<sha>/generator/model.pt
-    rather than the ./generator/model.pt the README shows. Detect that instead
-    of making every caller paste a 40-character sha into --pretrained-dir.
+    Two different directories are needed and they are not the same one:
+    InferencePipeline requires pretrained_dir to contain text_encoder/,
+    tokenizer/ and vae/, while the checkpoint is generator/model.pt one level
+    up. In the HF layout that download_models.sh produces those sit at
+    models--seedleap--zing-0.5/snapshots/<sha>/{pretrained,generator}, so
+    pointing --pretrained-dir at the snapshot root fails with
+    "pretrained directory is missing text_encoder/".
     """
-    if (pretrained_dir / "generator" / "model.pt").exists():
-        return pretrained_dir
-    candidates = sorted(pretrained_dir.glob("models--*/snapshots/*/generator/model.pt"))
-    if candidates:
-        return candidates[-1].parent.parent
-    return pretrained_dir
+    roots = []
+    if (base / "generator" / "model.pt").exists():
+        roots.append(base)
+    roots.extend(p.parent.parent
+                 for p in sorted(base.glob("models--*/snapshots/*/generator/model.pt")))
+
+    for root in roots:
+        checkpoint = root / "generator" / "model.pt"
+        for candidate in (root / "pretrained", root):
+            if (candidate / "text_encoder").is_dir():
+                return candidate, checkpoint
+
+    return base, base / "generator" / "model.pt"
 
 
 def resolve_zing_python(zing_root: Path) -> Path:
@@ -181,8 +192,9 @@ def main() -> int:
     out_root = args.out_root or bench_root / "generated_videos_5s"
     zing_root = args.zing_root.resolve()
     zing_python = args.zing_python or resolve_zing_python(zing_root)
-    pretrained_dir = resolve_pretrained_dir(args.pretrained_dir or zing_root / "pretrained_models")
-    checkpoint = args.checkpoint or pretrained_dir / "generator" / "model.pt"
+    pretrained_dir, found_checkpoint = resolve_zing_assets(
+        args.pretrained_dir or zing_root / "pretrained_models")
+    checkpoint = args.checkpoint or found_checkpoint
 
     for label, path in [("switch-frames", switch_dir), ("descriptions", descriptions),
                         ("zing checkout", zing_root)]:
@@ -241,8 +253,17 @@ def main() -> int:
         print(f"ERROR: checkpoint not found: {checkpoint}", file=sys.stderr)
         return 2
 
+    # zing_v0_5 lives in <zing-root>/src, so it is not importable from the repo
+    # root that `python -m zing_v0_5` is run from unless the package happens to
+    # be pip-installed into that venv. Put src on PYTHONPATH so this works
+    # either way rather than depending on how the venv was built.
+    env = os.environ.copy()
+    src_dir = str(zing_root / "src")
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{src_dir}{os.pathsep}{existing}" if existing else src_dir
+
     print()
-    result = subprocess.run(cmd, cwd=str(zing_root))
+    result = subprocess.run(cmd, cwd=str(zing_root), env=env)
     if result.returncode != 0:
         return result.returncode
 
