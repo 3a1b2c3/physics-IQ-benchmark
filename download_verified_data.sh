@@ -6,7 +6,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
-pip install -U huggingface_hub
-hf download Anates-Labs-Research/Physics-IQ-Verified \
+if [ ! -d .venv ]; then
+    uv venv
+fi
+uv pip install -U huggingface_hub
+.venv/bin/hf download Anates-Labs-Research/Physics-IQ-Verified \
   --repo-type dataset \
   --local-dir physics-IQ-benchmark-verified
