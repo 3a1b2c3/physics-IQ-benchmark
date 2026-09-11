@@ -71,6 +71,19 @@ def iter_samples(rows: list[dict], frames: dict[str, Path]):
             print(f"    {item}")
 
 
+def probe_duration(video: Path) -> float | None:
+    result = subprocess.run(
+        ["ffprobe", "-hide_banner", "-loglevel", "error",
+         "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", str(video)],
+        capture_output=True, text=True)
+    if result.returncode != 0:
+        return None
+    try:
+        return float(result.stdout.strip())
+    except ValueError:
+        return None
+
+
 def probe_frame_count(video: Path) -> int | None:
     result = subprocess.run(
         ["ffprobe", "-hide_banner", "-loglevel", "error", "-select_streams", "v:0",
@@ -102,11 +115,17 @@ def conform_video(video: Path, target_frames: int = TARGET_FRAMES,
     n_frames = probe_frame_count(video)
     if n_frames is None or n_frames == target_frames:
         return False
-    if n_frames < target_frames:
-        # Trimming cannot lengthen a clip. Silently producing a short video here
-        # would hand the benchmark something it rejects, so say so instead.
-        print(f"[physiq] WARNING: {video.name} has {n_frames} frames, need "
-              f"{target_frames} -- generate more, cannot trim up")
+    # Judge by duration, not frame count. Models run at their own frame rates --
+    # Cam2V models emit 16fps and ABot 12fps -- so 80 or 60 frames can already be
+    # a full 5.00s, and re-encoding those to 120@24 is resampling, not invention.
+    # What cannot be fixed is a clip that is genuinely *shorter* than 5s, which
+    # is what Echo's 113-frame (4.71s) output was.
+    target_seconds = target_frames / TARGET_FPS
+    duration = probe_duration(video)
+    if duration is not None and duration + 1e-3 < target_seconds:
+        print(f"[physiq] WARNING: {video.name} is {duration:.3f}s, need "
+              f"{target_seconds:.2f}s ({n_frames} frames) -- generate more, "
+              f"cannot extend")
         return False
 
     select = r"select=gte(n\,1)," if drop_leading else ""

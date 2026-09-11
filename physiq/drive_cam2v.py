@@ -40,13 +40,19 @@ from physiq_common import (TARGET_FPS, TARGET_FRAMES, RunTimer, conform_run,
 
 # Mirrors each integration's Cam2VApplicationDefaults. Only values this driver
 # needs; everything else stays at the application default.
+# blocks: each app's Cam2VApplicationDefaults.total_blocks, which is what that
+# model ships as a sensible rollout length. Used as the default here rather than
+# deriving one, because the latent-to-pixel ratio per block is not the same
+# across models (SANA-WM uses a latent chunk of 3, lingbot/hy 4) and guessing it
+# wrong changes clip length silently. conform_run normalises whatever comes out
+# to 5.00s, and over-generating is safe -- only under-generating is not.
 CAM2V_MODELS = {
-    "cam2v-lingbot":           {"fps": 16, "width": 832,  "height": 464},
-    "cam2v-hy-worldplay":      {"fps": 16, "width": 1280, "height": 704},
-    "cam2v-sana-wm-streaming": {"fps": 16, "width": 1280, "height": 704},
-    "cam2v-dummy":             {"fps": 16, "width": 640,  "height": 360},
+    "cam2v-lingbot":           {"fps": 16, "width": 832,  "height": 464, "blocks": 20},
+    "cam2v-hy-worldplay":      {"fps": 16, "width": 1280, "height": 704, "blocks": 20},
+    "cam2v-sana-wm-streaming": {"fps": 16, "width": 1280, "height": 704, "blocks": 10},
+    "cam2v-dummy":             {"fps": 16, "width": 640,  "height": 360, "blocks": 20},
 }
-FRAMES_PER_BLOCK = 4  # autoregressive chunk size
+FRAMES_PER_BLOCK = 4  # lingbot/hy latent chunk; only used to size the pose trace
 
 
 def write_static_poses(path: Path, frames: int) -> bool:
@@ -80,7 +86,11 @@ def main() -> int:
                          "../lingbot-world-v2/examples/00/intrinsics.npy")
     ap.add_argument("--width", type=int, default=None, help="override model default")
     ap.add_argument("--height", type=int, default=None, help="override model default")
-    ap.add_argument("--frames-per-block", type=int, default=FRAMES_PER_BLOCK)
+    ap.add_argument("--total-blocks", type=int, default=None,
+                    help="autoregressive rollout length; default is each model's own "
+                         "Cam2VApplicationDefaults.total_blocks")
+    ap.add_argument("--frames-per-block", type=int, default=FRAMES_PER_BLOCK,
+                    help="only sizes the pose trace, not the rollout")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default=None)
     ap.add_argument("--limit", type=int, default=None)
@@ -121,7 +131,10 @@ def main() -> int:
         return 2
 
     native_frames = TARGET_FRAMES * fps // TARGET_FPS
-    total_blocks = max(1, native_frames // args.frames_per_block)
+    total_blocks = args.total_blocks or spec["blocks"]
+    # The pose trace must cover the whole rollout; a block count larger than the
+    # 5s-equivalent would otherwise run past the end of the trace.
+    pose_frames = max(native_frames, total_blocks * args.frames_per_block)
 
     frames_map = find_switch_frames(switch_dir)
     rows = load_take1_rows(csv_path)
@@ -136,15 +149,15 @@ def main() -> int:
     work = out_dir / "_work"
     work.mkdir(exist_ok=True)
 
-    pose_path = work / f"static_{native_frames}_poses.npy"
-    if not write_static_poses(pose_path, native_frames):
+    pose_path = work / f"static_{pose_frames}_poses.npy"
+    if not write_static_poses(pose_path, pose_frames):
         return 2
 
     print_banner(args.app, csv_path, len(frames_map), len(samples),
                  native_frames, width, height, args.seed, out_dir,
                  {"integration": integration,
-                  "blocks": f"{total_blocks} x {args.frames_per_block} frames @ {fps}fps",
-                  "poses": "identity per frame (static)",
+                  "blocks": f"{total_blocks} (model default)",
+                  "poses": f"identity x {pose_frames} frames (static)",
                   "intrinsics": intrinsic_path,
                   "conform": f"{native_frames}@{fps} -> {TARGET_FRAMES}@{TARGET_FPS} (5.00s)"},
                  fps=fps)
