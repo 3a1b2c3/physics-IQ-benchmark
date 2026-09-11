@@ -215,8 +215,15 @@ def main() -> int:
                          "<benchmark-root>/generated_videos_5s)")
     ap.add_argument("--frames", type=int, default=120,
                     help="output frames; 120 = 5.0s at Zing's output_fps of 24")
-    ap.add_argument("--height", type=int, default=352)
-    ap.add_argument("--width", type=int, default=640)
+    # Zing's schema requires an explicit output size, so there is no "omit and
+    # let the model decide". These are the values from examples/case4_action_ti2v
+    # (the full-size example); the *_lowres variants use 640x352, which is what
+    # this defaulted to at first -- generating a quarter-size clip to compare
+    # against native-resolution ground truth measures the flag, not the model.
+    ap.add_argument("--height", type=int, default=704,
+                    help="default 704 = Zing's full-size example (lowres is 352)")
+    ap.add_argument("--width", type=int, default=1248,
+                    help="default 1248 = Zing's full-size example (lowres is 640)")
     ap.add_argument("--seed", type=int, default=0,
                     help="vary per run so run_01..run_04 are independent")
     ap.add_argument("--limit", type=int, default=None,
