@@ -140,14 +140,18 @@ def resolve_paths(bench_root: Path, descriptions: Path | None, out_root: Path | 
 
 def print_banner(model: str, csv_path: Path, n_frames_found: int, n_sessions: int,
                  frames: int, width: int, height: int, seed: int, out_dir: Path,
-                 extra: dict | None = None) -> None:
+                 extra: dict | None = None, fps: int = TARGET_FPS) -> None:
+    """`frames` and `fps` describe what the model natively emits, not the
+    conformed output -- several models generate at their own rate and are
+    normalised afterwards, and labelling native frames with the target fps
+    reports a duration the run never produced."""
     print("=" * 60)
     print(f"{model} -> Physics-IQ Verified (i2v, static camera)")
     print("=" * 60)
     print(f"  descriptions : {csv_path}")
     print(f"  switch frames: {n_frames_found} found")
     print(f"  samples      : {n_sessions}")
-    print(f"  output       : {frames} frames @ {TARGET_FPS}fps, {width}x{height}")
+    print(f"  output       : {frames} frames @ {fps}fps ({frames / fps:.2f}s), {width}x{height}")
     print(f"  actions      : static camera (no movement)")
     print(f"  seed         : {seed}")
     for key, value in (extra or {}).items():

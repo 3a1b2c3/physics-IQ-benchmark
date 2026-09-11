@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Stage cam2v-lingbot generations into Physics-IQ Verified, then evaluate.
+# Stage cam2v-hy-worldplay generations into Physics-IQ Verified, then evaluate.
 #
 # Same shape as MIND's scripts/drive_<model>.sh: this wrapper resolves paths and
 # checks preconditions, physiq/drive_cam2v.py does the work, and every extra
 # argument is forwarded through.
 #
-#   bash scripts/drive_lingbot.sh --run-name lingbot-op-run_01 --limit 1
-#   bash scripts/drive_lingbot.sh --run-name lingbot-op-run_01
-#   bash scripts/drive_lingbot.sh --run-name lingbot-op-run_02 --seed 1
+#   bash scripts/drive_hy_worldplay.sh --run-name hy-worldplay-op-run_01 --limit 1
+#   bash scripts/drive_hy_worldplay.sh --run-name hy-worldplay-op-run_01
+#   bash scripts/drive_hy_worldplay.sh --run-name hy-worldplay-op-run_02 --seed 1
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -41,14 +41,14 @@ if [ ! -d "$HERE/physics-IQ-benchmark-verified/switch-frames" ]; then
 fi
 
 echo "============================================================"
-echo "cam2v-lingbot staging into Physics-IQ Verified"
+echo "cam2v-hy-worldplay staging into Physics-IQ Verified"
 echo "============================================================"
 echo "  benchmark : $HERE"
-echo "  lingbot   : $FLASHDREAMS_ROOT/integrations_v2/lingbot"
+echo "  hyworld   : $FLASHDREAMS_ROOT/integrations_v2/lingbot"
 echo "  driver    : $DRIVER"
 echo "============================================================"
 
-"$PY" "$DRIVER" --benchmark-root "$HERE" --flashdreams-root "$FLASHDREAMS_ROOT" --app cam2v-lingbot "$@"
+"$PY" "$DRIVER" --benchmark-root "$HERE" --flashdreams-root "$FLASHDREAMS_ROOT" --app cam2v-hy-worldplay "$@"
 
 echo
 echo "Videos -> $HERE/generated_videos_5s/"

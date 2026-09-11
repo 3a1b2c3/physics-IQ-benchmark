@@ -139,7 +139,8 @@ def main() -> int:
                   "blocks": f"{blocks} x {args.frames_per_block} frames @ {ABOT_FPS}fps",
                   "actions": f"all keys released, {native_frames} frames",
                   "conform": f"{native_frames}@{ABOT_FPS} -> {TARGET_FRAMES}@{TARGET_FPS} (5.00s)",
-                  "pending": f"{pending} of {len(samples)} (rest already generated)"})
+                  "pending": f"{pending} of {len(samples)} (rest already generated)"},
+                 fps=ABOT_FPS)
 
     if not manifest:
         print("\n[physiq-abot] nothing to generate; all outputs exist")
