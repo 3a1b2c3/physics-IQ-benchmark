@@ -72,9 +72,17 @@ def main() -> int:
                     help=f"target frames after conform; {TARGET_FRAMES} = 5.0s at "
                          f"{TARGET_FPS}fps. Generation requests the next 8k+1 above "
                          f"this, because Echo rounds down to that stride.")
-    ap.add_argument("--width", type=int, default=512)
-    ap.add_argument("--height", type=int, default=288)
-    ap.add_argument("--steps", type=int, default=10)
+    # Unset by default so Echo uses its own (1280x704, 30 steps). These were
+    # briefly defaulted to the MIND smoke-test values (512x288, 10 steps), which
+    # is free there because MIND scores at low resolution -- but Physics-IQ
+    # compares against native-resolution ground truth, so quietly generating
+    # small would have measured the flag rather than the model.
+    ap.add_argument("--width", type=int, default=None,
+                    help="override Echo's default width (omit for native)")
+    ap.add_argument("--height", type=int, default=None,
+                    help="override Echo's default height (omit for native)")
+    ap.add_argument("--steps", type=int, default=None,
+                    help="override Echo's default step count (omit for native)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--limit", type=int, default=None,
                     help="only the first N samples -- use --limit 1 to smoke-test")
@@ -110,8 +118,8 @@ def main() -> int:
 
     out_dir.mkdir(parents=True, exist_ok=True)
     print_banner("Echo-WM", csv_path, len(frames_map), len(samples), gen_frames,
-                 args.width, args.height, args.seed, out_dir,
-                 {"echo": echo_root, "steps": args.steps,
+                 args.width or "native", args.height or "native", args.seed, out_dir,
+                 {"echo": echo_root, "steps": args.steps or "native",
                   "action": f"none-{gen_frames}",
                   "conform": f"{gen_frames} -> {args.frames} frames "
                              f"({args.frames / TARGET_FPS:.2f}s)"})
@@ -132,11 +140,12 @@ def main() -> int:
                "--action-str", f"none-{gen_frames}",
                "--num-frames", str(gen_frames),
                "--fps", str(TARGET_FPS),
-               "--width", str(args.width),
-               "--height", str(args.height),
-               "--steps", str(args.steps),
                "--seed", str(args.seed),
                "--output", str(target)]
+        for flag, value in (("--width", args.width), ("--height", args.height),
+                            ("--steps", args.steps)):
+            if value is not None:
+                cmd += [flag, str(value)]
 
         if args.dry_run:
             print("\n[physiq-echo] --dry-run; first command:")

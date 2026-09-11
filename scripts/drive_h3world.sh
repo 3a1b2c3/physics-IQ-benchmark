@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Stage H3-World generations into Physics-IQ Verified, then evaluate.
 #
-# Same shape as MIND's scripts/drive_<model>.sh: this wrapper resolves paths and
-# checks preconditions, physiq/drive_h3world.py does the work, and every extra
+# Same shape as scripts/drive_zing.sh: this wrapper resolves paths and checks
+# preconditions, physiq/drive_h3world.py does the work, and every extra
 # argument is forwarded through.
 #
 #   bash scripts/drive_h3world.sh --run-name h3world-op-run_01 --limit 1
@@ -16,9 +16,9 @@ cd "$HERE"
 H3_ROOT="${H3_ROOT:-$(cd "$HERE/.." && pwd)/H3-World}"
 DRIVER="$HERE/physiq/drive_h3world.py"
 
-# Zing runs in its own venv -- the model package is not importable from physiq's env.
-# The driver launches that interpreter itself; this only needs a python able to
-# read a CSV and write JSONL, so prefer physiq's venv and fall back to python3.
+# H3-World runs in its own conda env (minimax_h3) -- the driver launches it
+# itself via `conda run`. This process only needs a python able to read a CSV
+# and shell out, so prefer physiq's venv and fall back to python3.
 if [ -x "$HERE/.venv/bin/python" ]; then
   PY="$HERE/.venv/bin/python"
 else
@@ -44,7 +44,7 @@ echo "============================================================"
 echo "H3-World staging into Physics-IQ Verified"
 echo "============================================================"
 echo "  benchmark : $HERE"
-echo "  h3world   : $H3_ROOT"
+echo "  h3-world  : $H3_ROOT"
 echo "  driver    : $DRIVER"
 echo "============================================================"
 
