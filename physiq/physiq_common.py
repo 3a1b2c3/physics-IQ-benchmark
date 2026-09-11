@@ -102,6 +102,12 @@ def conform_video(video: Path, target_frames: int = TARGET_FRAMES,
     n_frames = probe_frame_count(video)
     if n_frames is None or n_frames == target_frames:
         return False
+    if n_frames < target_frames:
+        # Trimming cannot lengthen a clip. Silently producing a short video here
+        # would hand the benchmark something it rejects, so say so instead.
+        print(f"[physiq] WARNING: {video.name} has {n_frames} frames, need "
+              f"{target_frames} -- generate more, cannot trim up")
+        return False
 
     select = r"select=gte(n\,1)," if drop_leading else ""
     tmp = video.with_suffix(".conform.mp4")
@@ -121,10 +127,35 @@ def conform_video(video: Path, target_frames: int = TARGET_FRAMES,
     return True
 
 
+# Sidecars some models write next to each clip. They share the benchmark ID
+# prefix the evaluator matches on, so leaving them in a run folder gives every
+# scenario two candidate files.
+SIDECAR_SUFFIXES = ("_action",)
+
+
+def is_sidecar(path: Path) -> bool:
+    return any(path.stem.endswith(suffix) for suffix in SIDECAR_SUFFIXES)
+
+
+def run_clips(out_dir: Path) -> list[Path]:
+    """The clips that are actual submissions, excluding model sidecars."""
+    return sorted(p for p in out_dir.glob("*.mp4") if not is_sidecar(p))
+
+
+def prune_sidecars(out_dir: Path) -> int:
+    """Delete sidecar videos. Returns how many were removed."""
+    removed = 0
+    for path in sorted(out_dir.glob("*.mp4")):
+        if is_sidecar(path):
+            path.unlink()
+            removed += 1
+    return removed
+
+
 def conform_run(out_dir: Path, target_frames: int = TARGET_FRAMES,
                 drop_leading: bool = False) -> tuple[int, int]:
-    """Conform every clip in a run folder. Returns (rewritten, total)."""
-    clips = sorted(out_dir.glob("*.mp4"))
+    """Conform every submission clip in a run folder. Returns (rewritten, total)."""
+    clips = run_clips(out_dir)
     rewritten = sum(1 for c in clips if conform_video(c, target_frames, drop_leading))
     return rewritten, len(clips)
 

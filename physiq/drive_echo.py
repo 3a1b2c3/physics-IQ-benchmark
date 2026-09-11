@@ -28,7 +28,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from physiq_common import (TARGET_FPS, TARGET_FRAMES, RunTimer, conform_run,
                            find_switch_frames, iter_samples, load_take1_rows,
-                           print_banner, resolve_paths)
+                           print_banner, prune_sidecars, resolve_paths, run_clips)
+
+
+def valid_frame_count(minimum: int) -> int:
+    """Smallest 8k+1 >= minimum.
+
+    Echo quantises --num-frames down to its latent stride: asking for 120 yields
+    113 (8*14+1) and a 4.71s clip, which the benchmark rejects and which
+    conform cannot fix, since trimming cannot lengthen. Ask for 121 instead and
+    trim the one extra frame off.
+    """
+    n = max(minimum, 1)
+    while (n - 1) % 8:
+        n += 1
+    return n
 
 
 def resolve_echo_python(echo_root: Path) -> Path:
@@ -55,7 +69,9 @@ def main() -> int:
                     help="model-run folder, e.g. echo-op-run_01")
     ap.add_argument("--out-root", type=Path, default=None)
     ap.add_argument("--frames", type=int, default=TARGET_FRAMES,
-                    help=f"{TARGET_FRAMES} = 5.0s at {TARGET_FPS}fps")
+                    help=f"target frames after conform; {TARGET_FRAMES} = 5.0s at "
+                         f"{TARGET_FPS}fps. Generation requests the next 8k+1 above "
+                         f"this, because Echo rounds down to that stride.")
     ap.add_argument("--width", type=int, default=512)
     ap.add_argument("--height", type=int, default=288)
     ap.add_argument("--steps", type=int, default=10)
@@ -81,6 +97,8 @@ def main() -> int:
             print(f"ERROR: {label} not found: {path}", file=sys.stderr)
             return 2
 
+    gen_frames = valid_frame_count(args.frames)
+
     frames_map = find_switch_frames(switch_dir)
     rows = load_take1_rows(csv_path)
     if args.limit:
@@ -91,10 +109,12 @@ def main() -> int:
         return 2
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    print_banner("Echo-WM", csv_path, len(frames_map), len(samples), args.frames,
+    print_banner("Echo-WM", csv_path, len(frames_map), len(samples), gen_frames,
                  args.width, args.height, args.seed, out_dir,
                  {"echo": echo_root, "steps": args.steps,
-                  "action": f"none-{args.frames}"})
+                  "action": f"none-{gen_frames}",
+                  "conform": f"{gen_frames} -> {args.frames} frames "
+                             f"({args.frames / TARGET_FPS:.2f}s)"})
 
     entry = echo_root / "echo_wm" / "inference_wm.py"
     generated = skipped = failed = 0
@@ -109,8 +129,8 @@ def main() -> int:
         cmd = [str(echo_python), str(entry),
                "--image", str(frame.resolve()),
                "--prompt", description,
-               "--action-str", f"none-{args.frames}",
-               "--num-frames", str(args.frames),
+               "--action-str", f"none-{gen_frames}",
+               "--num-frames", str(gen_frames),
                "--fps", str(TARGET_FPS),
                "--width", str(args.width),
                "--height", str(args.height),
