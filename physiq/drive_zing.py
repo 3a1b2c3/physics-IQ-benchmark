@@ -40,7 +40,11 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from physiq_common import fmt_duration
 
 ACTION_KEYS = ["w", "a", "s", "d", "i", "j", "k", "l"]
 ID_RE = re.compile(r"^(\d{4})_")
@@ -108,6 +112,48 @@ def build_sessions(rows: list[dict], frames: dict[str, Path], n_frames: int,
         for item in missing[:5]:
             print(f"    {item}", file=sys.stderr)
     return sessions
+
+
+def drop_reference_frame(video: Path, expect_frames: int) -> bool:
+    """Remove the leading reference frame from a Zing rollout.
+
+    Zing prepends the reference (switch) frame to its output, so asking for N
+    frames yields N+1 and 5.04s instead of 5.00s -- and Physics-IQ rejects any
+    duration other than exactly 5 seconds. The extra frame is also the frame the
+    model was *given*: the benchmark scores the 5s that follow the switch frame,
+    so including it would compare a copied input against predicted ground truth.
+
+    Re-encodes rather than stream-copying because dropping the first frame moves
+    the keyframe. Returns True if the file was rewritten.
+    """
+    probe = subprocess.run(
+        ["ffprobe", "-hide_banner", "-loglevel", "error", "-select_streams", "v:0",
+         "-count_frames", "-show_entries", "stream=nb_read_frames",
+         "-of", "default=nw=1:nk=1", str(video)],
+        capture_output=True, text=True)
+    if probe.returncode != 0:
+        return False
+    try:
+        n_frames = int(probe.stdout.strip())
+    except ValueError:
+        return False
+    if n_frames == expect_frames:
+        return False  # already correct
+
+    tmp = video.with_suffix(".trim.mp4")
+    result = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(video),
+         # setpts rebases timestamps after the drop; -vsync/-fps_mode must not
+         # be combined with -r on ffmpeg 7 ("contradictory"), and the source is
+         # already CFR 24, so -r alone is enough.
+         "-vf", r"select=gte(n\,1),setpts=PTS-STARTPTS",
+         "-frames:v", str(expect_frames), "-r", "24", str(tmp)],
+        capture_output=True, text=True)
+    if result.returncode != 0 or not tmp.exists():
+        tmp.unlink(missing_ok=True)
+        return False
+    tmp.replace(video)
+    return True
 
 
 def resolve_zing_assets(base: Path) -> tuple[Path, Path]:
@@ -263,9 +309,17 @@ def main() -> int:
     env["PYTHONPATH"] = f"{src_dir}{os.pathsep}{existing}" if existing else src_dir
 
     print()
+    _t0 = time.monotonic()
     result = subprocess.run(cmd, cwd=str(zing_root), env=env)
     if result.returncode != 0:
         return result.returncode
+
+    trimmed = 0
+    for clip in sorted(out_dir.glob("*.mp4")):
+        if drop_reference_frame(clip, args.frames):
+            trimmed += 1
+    if trimmed:
+        print(f"[physiq-zing] dropped leading reference frame from {trimmed} clip(s)")
 
     produced = sorted(p.name for p in out_dir.glob("*.mp4"))
     print(f"\n[physiq-zing] {len(produced)}/{len(sessions)} clip(s) in {out_dir}")
